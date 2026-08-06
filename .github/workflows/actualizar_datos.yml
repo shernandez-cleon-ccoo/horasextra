@@ -1,0 +1,62 @@
+# Guarda este fichero como: .github/workflows/actualizar_datos.yml
+#
+# Qué hace:
+#   1. Se ejecuta automáticamente cada día (puedes ajustar el cron abajo).
+#   2. También se puede lanzar a mano desde la pestaña "Actions" de GitHub.
+#   3. Instala R + paquetes, corre agregar_datos_epa.R.
+#   4. Si el trimestre ya estaba al día, el script termina enseguida y no
+#      hay nada que commitear -> el workflow no hace ningún cambio.
+#   5. Si hay trimestre nuevo, agrega solo ese y sube datos/resumen_global.rds
+#      al repo con un commit automático.
+
+name: Actualizar datos EPA
+
+on:
+  schedule:
+    # 06:00 UTC todos los días. El INE publica trimestralmente, así que la
+    # mayoría de días el script no encontrará nada nuevo y terminará en
+    # segundos - el coste solo es real el día que hay trimestre nuevo.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}   # botón "Run workflow" manual en GitHub
+
+permissions:
+  contents: write   # necesario para poder hacer commit del .rds actualizado
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "release"
+
+      - name: Instalar dependencias del sistema (para sf/httr/curl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev
+
+      - name: Instalar paquetes R
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            dplyr
+            tidyr
+            stringr
+            purrr
+            readr
+            httr
+
+      - name: Ejecutar agregador
+        run: Rscript agregar_datos_epa.R
+
+      - name: Commit y push si hay cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add datos/resumen_global.rds
+          git diff --cached --quiet && echo "Sin cambios, no se commitea nada." || \
+            (git commit -m "Actualiza resumen_global.rds [automático]" && git push)
